@@ -2,6 +2,7 @@ import '@babel/polyfill';
 
 import dotenv from 'dotenv';
 import socketIO from 'socket.io';
+import mongoose from 'mongoose';
 import app from './index';
 
 const server = require('http').createServer(app);
@@ -9,8 +10,17 @@ const server = require('http').createServer(app);
 dotenv.config();
 
 // Server Setup
-const { PORT } = process.env;
+const { PORT, DB_URL } = process.env;
 
+// Database Connection
+mongoose
+  .connect(DB_URL, {
+    useNewUrlParser: true,
+    useCreateIndex: true,
+    useFindAndModify: false,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log('Database Connection Success 👍 💁 💯'));
 const io = socketIO.listen(server);
 
 const users = [];
@@ -36,13 +46,12 @@ io.sockets.on('connection', (socket) => {
   });
 
   socket.on('sendMessage', (data) => {
-    console.log('User = ', { users }, '===Message =', { data });
+    console.log('User = ', { users }, socket.id, '===Message =', { data });
     io.to(data.room).emit('message', {
       user: `${data.name}`,
       text: `${data.message}`,
     });
   });
-
   socket.on('disconnect', () => {
     const user = users.find((us) => us.id === socket.id);
     socket.leave(user.room);
