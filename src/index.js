@@ -10,12 +10,9 @@ const app = express();
 const Router = express.Router();
 
 app.use(cors());
+app.use(bodyParser.json());
 
 app.use('/', MainRouter(Router));
-app.use(
-  '/graphiql',
-  bodyParser.json(),
-  graphqlHTTP({ schema, graphiql: true })
-);
+app.use('/graphiql', graphqlHTTP({ schema, graphiql: true }));
 
 export default app;
