@@ -1,11 +1,12 @@
-import * as _ from 'lodash';
 import * as graphql from 'graphql';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import cloudinary from 'cloudinary';
 
-import Book from '../models/book';
-import Author from '../models/author';
 import User from '../models/user';
+import UserProfile from '../models/userProfile';
+import ProfileImage from '../models/profileImages';
+import Post from '../models/post';
 
 const {
   GraphQLObjectType,
@@ -15,6 +16,7 @@ const {
   GraphQLInt,
   GraphQLList,
   GraphQLNonNull,
+  GraphQLBoolean,
 } = graphql;
 
 const UserType = new GraphQLObjectType({
@@ -29,38 +31,65 @@ const UserType = new GraphQLObjectType({
   }),
 });
 
-const BookType = new GraphQLObjectType({
-  name: 'Book',
+const UserProfileType = new GraphQLObjectType({
+  name: 'UserProfile',
+  fields: () => ({
+    id: { type: GraphQLID },
+    user: {
+      type: UserType,
+      resolve(parent, args) {
+        const user = User.findById(parent.user);
+        return user;
+      },
+    },
+    dateOfBirth: { type: GraphQLString },
+    followers: {
+      type: new GraphQLList(UserType),
+    },
+    following: {
+      type: new GraphQLList(UserType),
+    },
+    location: { type: GraphQLString },
+    bio: { type: GraphQLString },
+  }),
+});
+
+const ProfileImageType = new GraphQLObjectType({
+  name: 'ProfileImage',
   fields: () => ({
     id: { type: GraphQLID },
     name: { type: GraphQLString },
-    genre: { type: GraphQLString },
-    author: {
-      type: AuthorType,
+    url: { type: GraphQLString },
+    active: { type: GraphQLBoolean },
+    userProfile: {
+      type: UserProfileType,
       resolve(parent, args) {
         // DB
-        const author = Author.findById(parent.authorId);
-        return author;
+        const profile = UserProfile.find({
+          id: parent.userProfile,
+        });
+        return profile;
       },
     },
   }),
 });
 
-const AuthorType = new GraphQLObjectType({
-  name: 'Author',
+const PostType = new GraphQLObjectType({
+  name: 'Post',
   fields: () => ({
     id: { type: GraphQLID },
-    name: { type: GraphQLString },
-    age: { type: GraphQLInt },
-    books: {
-      type: new GraphQLList(BookType),
+    caption: { type: GraphQLString },
+    postUrl: { type: GraphQLString },
+    location: { type: GraphQLString },
+    user: {
+      type: UserType,
       resolve(parent, args) {
-        // DB
-        const book = Book.find({
-          authorId: parent.id,
-        });
-        return book;
+        const user = User.findById(parent.user);
+        return user;
       },
+    },
+    mentions: {
+      type: new GraphQLList(UserType),
     },
   }),
 });
@@ -74,39 +103,45 @@ const RootQuery = new GraphQLObjectType({
         return User.find({});
       },
     },
-    book: {
-      type: BookType,
+    usersProfile: {
+      type: new GraphQLList(UserProfileType),
+      resolve(parent, args) {
+        return UserProfile.find({});
+      },
+    },
+    user: {
+      type: UserType,
       args: { id: { type: GraphQLID } },
       resolve(parent, args) {
-        // code to get data from DB
-        // return _.find(books, { id: args.id });
-        return Book.findById(args.id);
+        return User.findById(args.id);
       },
     },
-    books: {
-      type: new GraphQLList(BookType),
+    userProfile: {
+      type: new GraphQLList(UserProfileType),
+      args: { userId: { type: GraphQLID } },
       resolve(parent, args) {
-        // code to get data from DB
-        console.log('get books');
-        const books = Book.find({});
-        return books;
+        return UserProfile.find({ user: args.userId });
       },
     },
-    author: {
-      type: AuthorType,
+    userProfileImage: {
+      type: new GraphQLList(ProfileImageType),
+      args: { userProfileId: { type: GraphQLID } },
+      resolve(parent, args) {
+        return ProfileImage.find({ userProfile: args.userProfileId });
+      },
+    },
+    post: {
+      type: PostType,
       args: { id: { type: GraphQLID } },
       resolve(parent, args) {
-        // code to DB
-        const author = Author.findById(args.id);
-        return author;
+        return Post.findById(args.id);
       },
     },
-    authors: {
-      type: new GraphQLList(AuthorType),
+    userPosts: {
+      type: new GraphQLList(PostType),
+      args: { userId: { type: GraphQLID } },
       resolve(parent, args) {
-        // code to get data from DB
-        const authors = Author.find({});
-        return authors;
+        return Post.find({ user: args.userId });
       },
     },
   },
@@ -184,34 +219,70 @@ const Mutation = new GraphQLObjectType({
         };
       },
     },
-    addAuthor: {
-      type: AuthorType,
+    addUserProfile: {
+      type: UserProfileType,
       args: {
-        name: { type: new GraphQLNonNull(GraphQLString) },
-        age: { type: new GraphQLNonNull(GraphQLInt) },
+        userId: { type: new GraphQLNonNull(GraphQLID) },
+        dateOfBirth: { type: new GraphQLNonNull(GraphQLString) },
+        followers: {
+          type: new GraphQLList(GraphQLID),
+        },
+        following: {
+          type: new GraphQLList(GraphQLID),
+        },
+        location: { type: new GraphQLNonNull(GraphQLString) },
+        bio: { type: new GraphQLNonNull(GraphQLString) },
       },
       resolve(parent, args) {
-        const author = new Author({
-          name: args.name,
-          age: args.age,
+        const userProfile = new UserProfile({
+          user: args.userId,
+          dateOfBirth: args.dateOfBirth,
+          followers: args.followers,
+          following: args.following,
+          location: args.location,
+          bio: args.bio,
         });
-        return author.save();
+        return userProfile.save();
       },
     },
-    addBook: {
-      type: BookType,
+    addUserProfileImage: {
+      type: UserProfileType,
       args: {
         name: { type: new GraphQLNonNull(GraphQLString) },
-        genre: { type: new GraphQLNonNull(GraphQLString) },
-        authorId: { type: new GraphQLNonNull(GraphQLID) },
+        url: { type: new GraphQLNonNull(GraphQLString) },
+        active: { type: new GraphQLNonNull(GraphQLBoolean) },
+        userProfile: { type: new GraphQLNonNull(GraphQLID) },
       },
       resolve(parent, args) {
-        const book = new Book({
+        const saveProfileImage = new ProfileImage({
           name: args.name,
-          genre: args.genre,
-          authorId: args.authorId,
+          url: args.url,
+          active: args.active,
+          userProfile: args.userProfile,
         });
-        return book.save();
+        return saveProfileImage.save();
+      },
+    },
+    addPost: {
+      type: PostType,
+      args: {
+        caption: { type: new GraphQLNonNull(GraphQLString) },
+        postUrl: { type: new GraphQLNonNull(GraphQLString) },
+        location: { type: new GraphQLNonNull(GraphQLString) },
+        user: { type: new GraphQLNonNull(GraphQLID) },
+        mentions: {
+          type: new GraphQLList(GraphQLID),
+        },
+      },
+      resolve(parent, args) {
+        const saveProfileImage = new ProfileImage({
+          caption: args.caption,
+          postUrl: args.postUrl,
+          location: args.location,
+          user: args.user,
+          mentions: args.mentions,
+        });
+        return saveProfileImage.save();
       },
     },
   },
