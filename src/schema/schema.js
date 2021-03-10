@@ -90,6 +90,13 @@ const PostType = new GraphQLObjectType({
     },
     mentions: {
       type: new GraphQLList(UserType),
+      resolve(parent, args) {
+        return User.find({
+          _id: {
+            $in: parent.mentions,
+          },
+        });
+      },
     },
   }),
 });
@@ -137,11 +144,17 @@ const RootQuery = new GraphQLObjectType({
         return Post.findById(args.id);
       },
     },
+    posts: {
+      type: new GraphQLList(PostType),
+      resolve(parent, args) {
+        return Post.find({}).sort('createdAt');
+      },
+    },
     userPosts: {
       type: new GraphQLList(PostType),
       args: { userId: { type: GraphQLID } },
       resolve(parent, args) {
-        return Post.find({ user: args.userId });
+        return Post.find({ user: args.userId }).sort('-created_at');
       },
     },
   },
@@ -275,7 +288,14 @@ const Mutation = new GraphQLObjectType({
         },
       },
       resolve(parent, args) {
-        const saveProfileImage = new ProfileImage({
+        console.log(
+          args.caption,
+          args.postUrl,
+          args.location,
+          args.user,
+          args.mentions
+        );
+        const saveProfileImage = new Post({
           caption: args.caption,
           postUrl: args.postUrl,
           location: args.location,
