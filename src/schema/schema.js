@@ -7,6 +7,7 @@ import User from '../models/user';
 import UserProfile from '../models/userProfile';
 import ProfileImage from '../models/profileImages';
 import Post from '../models/post';
+import UserState from '../models/userState';
 
 const {
   GraphQLObjectType,
@@ -28,6 +29,22 @@ const UserType = new GraphQLObjectType({
     username: { type: GraphQLString },
     password: { type: GraphQLString },
     token: { type: GraphQLString },
+  }),
+});
+
+const UserStateType = new GraphQLObjectType({
+  name: 'UserState',
+  fields: () => ({
+    id: { type: GraphQLID },
+    online: { type: GraphQLString },
+    lastSeen: { type: GraphQLString },
+    user: {
+      type: UserType,
+      resolve(parent, args) {
+        const user = User.findById(parent.user);
+        return user;
+      },
+    },
   }),
 });
 
@@ -157,6 +174,13 @@ const RootQuery = new GraphQLObjectType({
         return Post.find({ user: args.userId }).sort('-created_at');
       },
     },
+    userState: {
+      type: UserStateType,
+      args: { userId: { type: GraphQLID } },
+      resolve(parent, args) {
+        return UserState.find({ user: args.userId });
+      },
+    },
   },
 });
 
@@ -183,6 +207,13 @@ const Mutation = new GraphQLObjectType({
         const token = await jwt.sign({ ...user }, process.env.JWT_SECRET, {
           expiresIn: process.env.JWT_EXPIRES_IN,
         });
+
+        const userState = new UserState({
+          user: user.id,
+          online: true,
+          lastSeen: Date.now(),
+        });
+        await userState.save();
 
         return {
           token,
@@ -303,6 +334,48 @@ const Mutation = new GraphQLObjectType({
           mentions: args.mentions,
         });
         return saveProfileImage.save();
+      },
+    },
+    followUser: {
+      type: UserProfileType,
+      args: {
+        userId: { type: new GraphQLNonNull(GraphQLID) },
+        followingId: { type: new GraphQLNonNull(GraphQLID) },
+      },
+      resolve: async (parent, args) => {
+        const user = await UserProfile.findById({ id: args.userId });
+        user.following.push(args.followingId);
+        user.save();
+
+        const anotherUser = await UserProfile.findById({
+          id: args.followingId,
+        });
+        anotherUser.followers.push(args.userId);
+        anotherUser.save();
+
+        return user;
+      },
+    },
+    unfollowUser: {
+      type: UserProfileType,
+      args: {
+        userId: { type: new GraphQLNonNull(GraphQLID) },
+        unfollowingId: { type: new GraphQLNonNull(GraphQLID) },
+      },
+      resolve: async (parent, args) => {
+        const user = await UserProfile.findById({ id: args.userId });
+        user.following = user.following.filter((x) => x !== args.unfollowingId);
+        user.save();
+
+        const anotherUser = await UserProfile.findById({
+          id: args.followingId,
+        });
+        anotherUser.followers = anotherUser.followers.filter(
+          (x) => x !== args.userId
+        );
+        anotherUser.save();
+
+        return user;
       },
     },
   },
