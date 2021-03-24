@@ -37,12 +37,17 @@ const userProfileSchema = new mongoose.Schema(
 );
 
 const autoPopulateFollowersAndFollowing = function (next) {
-  this.populate('followers following');
+  this.populate('followers following user');
   next();
 };
 
 userProfileSchema
   .pre('findOne', autoPopulateFollowersAndFollowing)
   .pre('find', autoPopulateFollowersAndFollowing);
+userProfileSchema.post('save', function (doc, next) {
+  doc.populate('following').execPopulate(function () {
+    next();
+  });
+});
 
 module.exports = mongoose.model('UserProfile', userProfileSchema);

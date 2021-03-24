@@ -1,7 +1,6 @@
 import * as graphql from 'graphql';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import cloudinary from 'cloudinary';
 
 import User from '../models/user';
 import UserProfile from '../models/userProfile';
@@ -29,6 +28,13 @@ const UserType = new GraphQLObjectType({
     username: { type: GraphQLString },
     password: { type: GraphQLString },
     token: { type: GraphQLString },
+    userProfile: {
+      type: UserProfileType,
+      resolve(parent, args) {
+        const user = UserProfile.find({ user: parent.id });
+        return user;
+      },
+    },
   }),
 });
 
@@ -181,6 +187,21 @@ const RootQuery = new GraphQLObjectType({
         return UserState.find({ user: args.userId });
       },
     },
+    recentlyAddedUsers: {
+      type: new GraphQLList(UserType),
+      args: { userId: { type: GraphQLID } },
+      resolve: async (parent, args) => {
+        const user = await UserProfile.findOne({ user: args.userId });
+        const followingUsersId = user.following.map((x) => x.id);
+        const users = await User.find({
+          $and: [
+            { _id: { $ne: args.userId } },
+            { _id: { $nin: followingUsersId } },
+          ],
+        }).limit(5);
+        return users;
+      },
+    },
   },
 });
 
@@ -214,6 +235,12 @@ const Mutation = new GraphQLObjectType({
           lastSeen: Date.now(),
         });
         await userState.save();
+
+        const userProfile = new UserProfile({
+          user: user.id,
+        });
+
+        userProfile.save();
 
         return {
           token,
@@ -343,17 +370,17 @@ const Mutation = new GraphQLObjectType({
         followingId: { type: new GraphQLNonNull(GraphQLID) },
       },
       resolve: async (parent, args) => {
-        const user = await UserProfile.findById({ id: args.userId });
-        user.following.push(args.followingId);
-        user.save();
+        const userProf = await UserProfile.findOne({ user: args.userId });
+        userProf.following = [...userProf.following, args.followingId];
+        await userProf.populate('following').save();
 
-        const anotherUser = await UserProfile.findById({
-          id: args.followingId,
+        const anotherUser = await UserProfile.findOne({
+          user: args.followingId,
         });
-        anotherUser.followers.push(args.userId);
+        anotherUser.followers = [...anotherUser.followers, args.userId];
         anotherUser.save();
-
-        return user;
+        console.log({ userProf });
+        return userProf;
       },
     },
     unfollowUser: {
@@ -363,12 +390,12 @@ const Mutation = new GraphQLObjectType({
         unfollowingId: { type: new GraphQLNonNull(GraphQLID) },
       },
       resolve: async (parent, args) => {
-        const user = await UserProfile.findById({ id: args.userId });
+        const user = await UserProfile.findOne({ user: args.userId });
         user.following = user.following.filter((x) => x !== args.unfollowingId);
         user.save();
 
-        const anotherUser = await UserProfile.findById({
-          id: args.followingId,
+        const anotherUser = await UserProfile.findOne({
+          user: args.followingId,
         });
         anotherUser.followers = anotherUser.followers.filter(
           (x) => x !== args.userId
