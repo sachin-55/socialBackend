@@ -74,6 +74,17 @@ const UserProfileType = new GraphQLObjectType({
     },
     location: { type: GraphQLString },
     bio: { type: GraphQLString },
+    userProfileImages: {
+      type: ProfileImageType,
+      resolve(parent, args) {
+        // DB
+        const profileImages = ProfileImage.find({
+          userProfile: parent.id,
+          active: true,
+        });
+        return profileImages;
+      },
+    },
   }),
 });
 
@@ -178,6 +189,26 @@ const RootQuery = new GraphQLObjectType({
       args: { userId: { type: GraphQLID } },
       resolve(parent, args) {
         return Post.find({ user: args.userId }).sort('-created_at');
+      },
+    },
+    userNewsFeedPosts: {
+      type: new GraphQLList(PostType),
+      args: { userId: { type: GraphQLID } },
+      resolve: async (parent, args) => {
+        const profile = await UserProfile.findOne({ user: args.userId });
+        const userFollowing = profile.following.map((x) => x.id);
+        const userFollowers = profile.followers.map((x) => x.id);
+        const allowedUserPosts = userFollowing.reduce((acc, val) => {
+          if (userFollowers.includes(val)) {
+            acc.push(val);
+          }
+          return acc;
+        }, []);
+        allowedUserPosts.push(args.userId);
+        const allPosts = Post.find({
+          user: { $in: allowedUserPosts },
+        }).sort('-created_at');
+        return allPosts;
       },
     },
     userState: {
