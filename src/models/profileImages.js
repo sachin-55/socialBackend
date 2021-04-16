@@ -8,10 +8,6 @@ const profileImages = new mongoose.Schema(
     url: {
       type: String,
     },
-    active: {
-      type: Boolean,
-      default: false,
-    },
     userProfile: {
       type: Schema.Types.ObjectId,
       ref: 'UserProfile',

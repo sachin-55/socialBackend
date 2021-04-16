@@ -76,11 +76,9 @@ const UserProfileType = new GraphQLObjectType({
     bio: { type: GraphQLString },
     userProfileImages: {
       type: ProfileImageType,
-      resolve(parent, args) {
-        // DB
-        const profileImages = ProfileImage.find({
+      resolve: async (parent, args) => {
+        const profileImages = await ProfileImage.findOne({
           userProfile: parent.id,
-          active: true,
         });
         return profileImages;
       },
@@ -94,7 +92,6 @@ const ProfileImageType = new GraphQLObjectType({
     id: { type: GraphQLID },
     name: { type: GraphQLString },
     url: { type: GraphQLString },
-    active: { type: GraphQLBoolean },
     userProfile: {
       type: UserProfileType,
       resolve(parent, args) {
@@ -348,18 +345,28 @@ const Mutation = new GraphQLObjectType({
       },
     },
     addUserProfileImage: {
-      type: UserProfileType,
+      type: ProfileImageType,
       args: {
         name: { type: new GraphQLNonNull(GraphQLString) },
         url: { type: new GraphQLNonNull(GraphQLString) },
-        active: { type: new GraphQLNonNull(GraphQLBoolean) },
         userProfile: { type: new GraphQLNonNull(GraphQLID) },
       },
-      resolve(parent, args) {
+      resolve: async (parent, args) => {
+        const img = await ProfileImage.findOne({
+          userProfile: args.userProfile,
+        });
+
+        if (img && img.id) {
+          const updateImg = await ProfileImage.findOneAndUpdate(
+            { _id: img.id },
+            { url: args.url }
+          );
+          return updateImg;
+        }
+
         const saveProfileImage = new ProfileImage({
           name: args.name,
           url: args.url,
-          active: args.active,
           userProfile: args.userProfile,
         });
         return saveProfileImage.save();
