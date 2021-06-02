@@ -1,3 +1,4 @@
+/* eslint-disable no-use-before-define */
 import * as graphql from 'graphql';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -6,6 +7,8 @@ import User from '../models/user';
 import UserProfile from '../models/userProfile';
 import ProfileImage from '../models/profileImages';
 import Post from '../models/post';
+import Comment from '../models/comment';
+import Like from '../models/like';
 import UserState from '../models/userState';
 
 const {
@@ -31,8 +34,7 @@ const UserType = new GraphQLObjectType({
     userProfile: {
       type: UserProfileType,
       resolve(parent, args) {
-        const user = UserProfile.find({ user: parent.id });
-        return user;
+        return UserProfile.findOne({ user: parent.id });
       },
     },
   }),
@@ -105,6 +107,49 @@ const ProfileImageType = new GraphQLObjectType({
   }),
 });
 
+const CommentType = new GraphQLObjectType({
+  name: 'Comment',
+  fields: () => ({
+    id: { type: GraphQLID },
+    created_at: { type: GraphQLString },
+    postId: {
+      type: PostType,
+      resolve(parent, args) {
+        return Post.findById(parent.postId);
+      },
+    },
+    userId: {
+      type: UserType,
+      resolve(parent, args) {
+        return User.findById(parent.userId);
+      },
+    },
+
+    comment: { type: GraphQLString },
+    likes: {
+      type: GraphQLInt,
+    },
+  }),
+});
+
+const LikeType = new GraphQLObjectType({
+  name: 'Like',
+  fields: () => ({
+    id: { type: GraphQLID },
+    postId: {
+      type: PostType,
+      resolve(parent, args) {
+        return Post.findById(parent.postId);
+      },
+    },
+    userId: {
+      type: UserType,
+      resolve(parent, args) {
+        return User.findById(parent.userId);
+      },
+    },
+  }),
+});
 const PostType = new GraphQLObjectType({
   name: 'Post',
   fields: () => ({
@@ -112,6 +157,7 @@ const PostType = new GraphQLObjectType({
     caption: { type: GraphQLString },
     postUrl: { type: GraphQLString },
     location: { type: GraphQLString },
+    created_at: { type: GraphQLString },
     user: {
       type: UserType,
       resolve(parent, args) {
@@ -119,6 +165,7 @@ const PostType = new GraphQLObjectType({
         return user;
       },
     },
+
     mentions: {
       type: new GraphQLList(UserType),
       resolve(parent, args) {
@@ -126,6 +173,22 @@ const PostType = new GraphQLObjectType({
           _id: {
             $in: parent.mentions,
           },
+        });
+      },
+    },
+    comments: {
+      type: new GraphQLList(CommentType),
+      resolve(parent, args) {
+        return Comment.find({
+          postId: parent.id,
+        });
+      },
+    },
+    likes: {
+      type: new GraphQLList(LikeType),
+      resolve(parent, args) {
+        return Like.find({
+          postId: parent.id,
         });
       },
     },
@@ -228,6 +291,15 @@ const RootQuery = new GraphQLObjectType({
           ],
         }).limit(5);
         return users;
+      },
+    },
+    followings: {
+      type: new GraphQLList(UserType),
+      args: { userId: { type: GraphQLID } },
+      resolve: async (parent, args) => {
+        const user = await UserProfile.findOne({ user: args.userId });
+
+        return user.following;
       },
     },
   },
@@ -384,13 +456,6 @@ const Mutation = new GraphQLObjectType({
         },
       },
       resolve(parent, args) {
-        console.log(
-          args.caption,
-          args.postUrl,
-          args.location,
-          args.user,
-          args.mentions
-        );
         const saveProfileImage = new Post({
           caption: args.caption,
           postUrl: args.postUrl,
@@ -399,6 +464,44 @@ const Mutation = new GraphQLObjectType({
           mentions: args.mentions,
         });
         return saveProfileImage.save();
+      },
+    },
+    likePostToggle: {
+      type: LikeType,
+      args: {
+        postId: { type: new GraphQLNonNull(GraphQLID) },
+        userId: { type: new GraphQLNonNull(GraphQLID) },
+      },
+      resolve: async (parent, args) => {
+        const like = await Like.findOne({
+          postId: args.postId,
+          userId: args.userId,
+        });
+        let updatedLike;
+        if (like && like.id) {
+          updatedLike = await Like.findByIdAndDelete(like.id);
+        } else {
+          updatedLike = await Like.create({
+            postId: args.postId,
+            userId: args.userId,
+          });
+        }
+        return updatedLike;
+      },
+    },
+    commentPost: {
+      type: CommentType,
+      args: {
+        postId: { type: new GraphQLNonNull(GraphQLID) },
+        userId: { type: new GraphQLNonNull(GraphQLID) },
+        comment: { type: new GraphQLNonNull(GraphQLString) },
+      },
+      resolve: async (parent, args) => {
+        return Comment.create({
+          postId: args.postId,
+          userId: args.userId,
+          comment: args.comment,
+        });
       },
     },
     followUser: {
@@ -417,7 +520,6 @@ const Mutation = new GraphQLObjectType({
         });
         anotherUser.followers = [...anotherUser.followers, args.userId];
         anotherUser.save();
-        console.log({ userProf });
         return userProf;
       },
     },
@@ -429,14 +531,17 @@ const Mutation = new GraphQLObjectType({
       },
       resolve: async (parent, args) => {
         const user = await UserProfile.findOne({ user: args.userId });
-        user.following = user.following.filter((x) => x !== args.unfollowingId);
+        user.following = user.following.filter(
+          (x) => x.id !== args.unfollowingId
+        );
         user.save();
 
         const anotherUser = await UserProfile.findOne({
-          user: args.followingId,
+          user: args.unfollowingId,
         });
+
         anotherUser.followers = anotherUser.followers.filter(
-          (x) => x !== args.userId
+          (x) => x.id !== args.userId
         );
         anotherUser.save();
 
