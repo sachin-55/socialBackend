@@ -9,6 +9,9 @@ const userStateSchema = new mongoose.Schema(
     lastSeen: {
       type: Date,
     },
+    socketId: {
+      type: String,
+    },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
