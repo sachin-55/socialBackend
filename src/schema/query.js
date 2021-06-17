@@ -128,6 +128,15 @@ const RootQuery = new GraphQLObjectType({
         return user.following;
       },
     },
+    followers: {
+      type: new GraphQLList(UserType),
+      args: { userId: { type: GraphQLID } },
+      resolve: async (parent, args) => {
+        const user = await UserProfile.findOne({ user: args.userId });
+
+        return user.followers;
+      },
+    },
     uniqueUsers: {
       type: new GraphQLList(UserType),
       args: {
